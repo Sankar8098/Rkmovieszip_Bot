@@ -2,10 +2,20 @@
 # Subscribe YouTube Channel For Amazing Bot @Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-import re, math, logging, secrets, mimetypes, time
-from info import *
+import re
+import math
+import logging
+import secrets
+import mimetypes
+import time
+import sys
 from aiohttp import web
 from aiohttp.http_exceptions import BadStatusLine
+from info import *
+
+# Ensure TechVJ is accessible
+sys.path.append("/workspace")
+
 from TechVJ.bot import multi_clients, work_loads, TechVJBot
 from TechVJ.server.exceptions import FIleNotFound, InvalidHash
 from TechVJ import StartTime, __version__
@@ -25,12 +35,13 @@ async def stream_handler(request: web.Request):
         path = request.match_info["path"]
         match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
-            secure_hash = match.group(1)
-            id = int(match.group(2))
+            secure_hash, id = match.group(1), int(match.group(2))
         else:
             id = int(re.search(r"(\d+)(?:\/\S+)?", path).group(1))
             secure_hash = request.rel_url.query.get("hash")
+
         return web.Response(text=await render_page(id, secure_hash), content_type='text/html')
+
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -42,17 +53,18 @@ async def stream_handler(request: web.Request):
         raise web.HTTPInternalServerError(text=str(e))
 
 @routes.get(r"/{path:\S+}", allow_head=True)
-async def stream_handler(request: web.Request):
+async def media_stream(request: web.Request):
     try:
         path = request.match_info["path"]
         match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
         if match:
-            secure_hash = match.group(1)
-            id = int(match.group(2))
+            secure_hash, id = match.group(1), int(match.group(2))
         else:
             id = int(re.search(r"(\d+)(?:\/\S+)?", path).group(1))
             secure_hash = request.rel_url.query.get("hash")
+
         return await media_streamer(request, id, secure_hash)
+
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -70,7 +82,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
     
     index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
-    
+
     if MULTI_CLIENT:
         logging.info(f"Client {index} is now serving {request.remote}")
 
@@ -81,14 +93,15 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         logging.debug(f"Creating new ByteStreamer object for client {index}")
         tg_connect = ByteStreamer(faster_client)
         class_cache[faster_client] = tg_connect
+
     logging.debug("before calling get_file_properties")
     file_id = await tg_connect.get_file_properties(id)
     logging.debug("after calling get_file_properties")
-    
+
     if file_id.unique_id[:6] != secure_hash:
         logging.debug(f"Invalid hash for message with ID {id}")
         raise InvalidHash
-    
+
     file_size = file_id.file_size
 
     if range_header:
@@ -99,7 +112,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         from_bytes = request.http_range.start or 0
         until_bytes = (request.http_range.stop or file_size) - 1
 
-    if (until_bytes > file_size) or (from_bytes < 0) or (until_bytes < from_bytes):
+    if until_bytes > file_size or from_bytes < 0 or until_bytes < from_bytes:
         return web.Response(
             status=416,
             body="416: Range not satisfiable",
@@ -108,13 +121,12 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
 
     chunk_size = 1024 * 1024
     until_bytes = min(until_bytes, file_size - 1)
-
     offset = from_bytes - (from_bytes % chunk_size)
     first_part_cut = from_bytes - offset
     last_part_cut = until_bytes % chunk_size + 1
-
     req_length = until_bytes - from_bytes + 1
     part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
+
     body = tg_connect.yield_file(
         file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
     )
@@ -146,4 +158,5 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Accept-Ranges": "bytes",
         },
-        )
+            )
+        
