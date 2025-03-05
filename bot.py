@@ -60,6 +60,7 @@ async def start():
     temp.ME = me.id
     temp.U_NAME = me.username
     temp.B_NAME = me.first_name
+    logging.info(LOG_STR)
     logging.info(script.LOGO)
     tz = pytz.timezone('Asia/Kolkata')
     today = date.today()
@@ -82,4 +83,4 @@ if __name__ == '__main__':
         loop.run_until_complete(start())
     except KeyboardInterrupt:
         logging.info('Service Stopped Bye 👋')
-
+    
